@@ -70,7 +70,7 @@ function onFrame() {
 onMount(async () => {
     await tick();
 
-    canvas = new HuesCanvas2D(imboxEl);
+    canvas = new HuesCanvas2D(imboxEl, 720);
 
     let raf: number;
     let cb = () => {

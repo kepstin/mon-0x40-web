@@ -69,6 +69,11 @@ module.exports = [
                     test: /(audio-worker|mpg123|ogg|vorbis)\.js$/,
                     type: 'asset/resource',
                 },
+                // OpenGL Shader fragments for WebGL renderer
+                {
+                    test: /\.glsl$/,
+                    type: 'asset/source',
+                }
             ],
         },
         resolve: {
@@ -119,6 +124,11 @@ module.exports = [
                     test: /\.(png|jpe?g|gif|eot|svg|ttf|woff|ico|html)$/i,
                     type: 'asset/resource',
                 },
+                // OpenGL Shader fragments for WebGL renderer
+                {
+                    test: /\.glsl$/,
+                    type: 'asset/source',
+                }
             ],
         },
         resolve: {
