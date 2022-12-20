@@ -100,13 +100,20 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         }
 
         const gl = this.#gl;
+        const extAnisotropic = this.#extAnisotropic;
+
+        const maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+
         const texture: WebGLTexture = gl.createTexture()!;
         gl.bindTexture(gl.TEXTURE_2D, texture);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 9);
+        gl.texParameterf(gl.TEXTURE_2D, extAnisotropic.TEXTURE_MAX_ANISOTROPY_EXT, maxAnisotropy);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, bitmap);
+        gl.generateMipmap(gl.TEXTURE_2D);
         this.#imgTextureMap.set(bitmap, texture);
 
         return texture;
@@ -148,6 +155,9 @@ export default class HuesCanvasGL2 implements HuesCanvas {
             ((params.colour >> 8) & 0xff) / 255,
             (params.colour & 0xff) / 255
         );
+
+        const uBlur = gl.getUniformLocation(shader, "u_blur");
+        gl.uniform2f(uBlur, params.xBlur * 1280, params.yBlur * 1280);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }

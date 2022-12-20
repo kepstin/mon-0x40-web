@@ -3,6 +3,7 @@ precision mediump float;
 
 uniform vec3 u_hue;
 uniform sampler2D u_image;
+uniform vec2 u_blur;
 
 in vec2 v_textureCoord;
 
@@ -40,6 +41,6 @@ vec4 blend(vec4 tsample, vec3 color) {
 }
 
 void main(void) {
-    vec4 tsample = texture(u_image, v_textureCoord);
+    vec4 tsample = textureGrad(u_image, v_textureCoord, dFdx(v_textureCoord) * u_blur, dFdy(v_textureCoord)* u_blur);
     f_fragColor = blend(tsample, u_hue);
 }
