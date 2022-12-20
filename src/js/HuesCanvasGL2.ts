@@ -7,6 +7,22 @@ import vertexSolid from "../glsl/HuesCanvasGL2/vertex-solid.glsl";
 
 import fragmentSolid from "../glsl/HuesCanvasGL2/fragment-solid.glsl";
 
+function colourToGL(colour: number): Array<number> {
+    return [
+        (colour >> 16) / 255,
+        ((colour >> 8) & 0xff) / 255,
+        (colour & 0xff) / 255
+    ];
+}
+
+type LocationBlock = {
+    aVertexPosition: number,
+    aTextureCoord: number,
+    uImage: WebGLUniformLocation,
+    uHue: WebGLUniformLocation,
+    uBlur: WebGLUniformLocation,
+    uOverlay: WebGLUniformLocation,
+};
 
 export default class HuesCanvasGL2 implements HuesCanvas {
     #root: HTMLElement;
@@ -17,6 +33,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
     #needShaderCompile: boolean;
     #shaderProgram: WebGLProgram | null;
+    #locationBlock: LocationBlock | null;
     #positionBuf: WebGLBuffer;
     #imagePositionBuf: WebGLBuffer;
 
@@ -46,6 +63,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         this.#needShaderCompile = true;
         this.#shaderProgram = null;
+        this.#locationBlock = null;
         window.setTimeout(() => { this.#compileShaders(); });
 
         const positionBuf = gl.createBuffer()!;
@@ -74,18 +92,27 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.shaderSource(fragmentShader, fragmentSolid);
         gl.compileShader(fragmentShader);
 
-        const shaderProgram = gl.createProgram()!;
-        gl.attachShader(shaderProgram, vertexShader);
-        gl.attachShader(shaderProgram, fragmentShader);
-        gl.linkProgram(shaderProgram)
+        const shader = gl.createProgram()!;
+        gl.attachShader(shader, vertexShader);
+        gl.attachShader(shader, fragmentShader);
+        gl.linkProgram(shader)
 
-        if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
-            console.log(gl.getProgramInfoLog(shaderProgram));
+        if (!gl.getProgramParameter(shader, gl.LINK_STATUS)) {
+            console.log(gl.getProgramInfoLog(shader));
             throw new Error("Failed to compile shader program");
         }
 
         this.#needShaderCompile = false;
-        this.#shaderProgram = shaderProgram;
+        this.#shaderProgram = shader;
+
+        this.#locationBlock = {
+            aVertexPosition: gl.getAttribLocation(shader, "a_vertexPosition"),
+            aTextureCoord: gl.getAttribLocation(shader, "a_textureCoord"),
+            uImage: gl.getUniformLocation(shader, "u_image")!,
+            uHue: gl.getUniformLocation(shader, "u_hue")!,
+            uBlur: gl.getUniformLocation(shader, "u_blur")!,
+            uOverlay: gl.getUniformLocation(shader, "u_overlay")!,
+        };
     }
 
     #getImgTexture(bitmap: HTMLImageElement): WebGLTexture {
@@ -122,37 +149,31 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
         const shader = this.#shaderProgram!;
         gl.useProgram(shader);
 
-        const aVertexPosition = gl.getAttribLocation(shader, "a_vertexPosition");
-        gl.bindBuffer(gl.ARRAY_BUFFER, this.#positionBuf);
-        gl.enableVertexAttribArray(aVertexPosition);
-        gl.vertexAttribPointer(aVertexPosition, 2, gl.FLOAT, false, 0, 0);
+        const loc = this.#locationBlock!;
 
-        const aTextureCoord = gl.getAttribLocation(shader, "a_textureCoord");
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.#positionBuf);
+        gl.enableVertexAttribArray(loc.aVertexPosition);
+        gl.vertexAttribPointer(loc.aVertexPosition, 2, gl.FLOAT, false, 0, 0);
+
         gl.bindBuffer(gl.ARRAY_BUFFER, this.#imagePositionBuf);
-        gl.enableVertexAttribArray(aTextureCoord);
-        gl.vertexAttribPointer(aTextureCoord, 2, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(loc.aTextureCoord);
+        gl.vertexAttribPointer(loc.aTextureCoord, 2, gl.FLOAT, false, 0, 0);
 
         if (params.bitmap) {
             const texture = this.#getImgTexture(params.bitmap);
             gl.activeTexture(gl.TEXTURE0);
             gl.bindTexture(gl.TEXTURE_2D, texture);
-            const uImage = gl.getUniformLocation(shader, "u_image");
-            gl.uniform1i(uImage, 0);
+            gl.uniform1i(loc.uImage, 0);
         }
 
-        const uHue = gl.getUniformLocation(shader, "u_hue");
-        gl.uniform3f(
-            uHue,
-            (params.colour >> 16) / 255,
-            ((params.colour >> 8) & 0xff) / 255,
-            (params.colour & 0xff) / 255
-        );
-
-        const uBlur = gl.getUniformLocation(shader, "u_blur");
-        gl.uniform2f(uBlur, params.xBlur * 1280, params.yBlur * 1280);
+        gl.uniform3fv(loc.uHue, colourToGL(params.colour));
+        gl.uniform2f(loc.uBlur, params.xBlur * 1280, params.yBlur * 1280);
+        gl.uniform4fv(loc.uOverlay, [...colourToGL(params.overlayColour), Math.min(params.overlayPercent, 1.0)])
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
