@@ -20,7 +20,10 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
     #needShaderCompile: boolean;
     #shaderProgram: WebGLProgram | null;
-    #positionBuf: WebGLBuffer | null;
+    #positionBuf: WebGLBuffer;
+    #imagePositionBuf: WebGLBuffer;
+
+    #imgTextureMap: WeakMap<HTMLImageElement, WebGLTexture>;
 
     constructor(root: HTMLElement) {
         this.#root = root;
@@ -50,8 +53,17 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         this.#shaderProgram = null;
         window.setTimeout(() => { this.#compileShaders(); });
 
-        this.#positionBuf = null;
-        this.#setupVertexBuffers();
+        const positionBuf = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]), gl.STATIC_DRAW);
+        this.#positionBuf = positionBuf;
+
+        const imagePositionBuf = gl.createBuffer()!;
+        gl.bindBuffer(gl.ARRAY_BUFFER, imagePositionBuf);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.DYNAMIC_DRAW);
+        this.#imagePositionBuf = imagePositionBuf;
+
+        this.#imgTextureMap = new WeakMap();
     }
 
     #compileShaders() {
@@ -81,13 +93,23 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         this.#shaderProgram = shaderProgram;
     }
 
-    #setupVertexBuffers() {
-        const gl = this.#gl;
+    #getImgTexture(bitmap: HTMLImageElement): WebGLTexture {
+        let lookupTexture: WebGLTexture | undefined;
+        if (lookupTexture = this.#imgTextureMap.get(bitmap)) {
+            return lookupTexture;
+        }
 
-        const positionBuf = gl.createBuffer()!;
-        gl.bindBuffer(gl.ARRAY_BUFFER, positionBuf);
-        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, 1, 1, 1, -1, -1, 1, -1]), gl.STATIC_DRAW);
-        this.#positionBuf = positionBuf;
+        const gl = this.#gl;
+        const texture: WebGLTexture = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_2D, texture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, bitmap);
+        this.#imgTextureMap.set(bitmap, texture);
+
+        return texture;
     }
 
     draw(params: RenderParams): void {
@@ -105,6 +127,19 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.bindBuffer(gl.ARRAY_BUFFER, this.#positionBuf);
         gl.enableVertexAttribArray(aVertexPosition);
         gl.vertexAttribPointer(aVertexPosition, 2, gl.FLOAT, false, 0, 0);
+
+        const aTextureCoord = gl.getAttribLocation(shader, "a_textureCoord");
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.#imagePositionBuf);
+        gl.enableVertexAttribArray(aTextureCoord);
+        gl.vertexAttribPointer(aTextureCoord, 2, gl.FLOAT, false, 0, 0);
+
+        if (params.bitmap) {
+            const texture = this.#getImgTexture(params.bitmap);
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            const uImage = gl.getUniformLocation(shader, "u_image");
+            gl.uniform1i(uImage, 0);
+        }
 
         const uHue = gl.getUniformLocation(shader, "u_hue");
         gl.uniform3f(
