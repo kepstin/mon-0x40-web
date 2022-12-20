@@ -1,17 +1,14 @@
 #version 300 es
-precision mediump float;
 
 uniform vec3 u_lastHue;
 uniform vec4 u_hue;
-uniform sampler2D u_image;
-uniform vec2 u_blur;
 uniform vec4 u_backdrop;
 uniform vec4 u_overlay;
 uniform float u_invert;
 
-in vec2 v_textureCoord;
+in vec2 a_vertexPosition;
 
-out vec4 f_fragColor;
+flat out vec4 v_hue;
 
 vec3 hue() {
     return mix(u_lastHue.rgb, u_hue.rgb, u_hue.a);
@@ -43,10 +40,10 @@ vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
     return vec4(c_result * backdrop.a, backdrop.a);
 }
 
-vec4 blend(vec4 tsample) {
-    float talpha = tsample.a + u_backdrop.a * (1.0 - tsample.a);
-    tsample = vec4((tsample.rgb * tsample.a + u_backdrop.rgb * u_backdrop.a * (1.0 - tsample.a)) / talpha, talpha);
-    return hard_light(tsample, hue(), 0.7);
+vec4 blend() {
+    vec3 colour = hue();
+    vec4 blend = hard_light(u_backdrop, colour, 0.7);
+    return vec4(mix(colour, blend.rgb, blend.a), 1.0);
 }
 
 vec4 overlay(vec4 source) {
@@ -58,9 +55,9 @@ vec4 invert(vec4 source) {
 }
 
 void main(void) {
-    vec4 tsample = textureGrad(u_image, v_textureCoord, dFdx(v_textureCoord) * u_blur * 2.0, dFdy(v_textureCoord) * u_blur * 2.0);
-    vec4 blend = blend(tsample);
+    gl_Position = vec4(a_vertexPosition, 0, 1);
+    vec4 blend = blend();
     vec4 overlaySample = overlay(blend);
     vec4 invertSample = invert(overlaySample);
-    f_fragColor = invertSample;
+    v_hue = invertSample;
 }
