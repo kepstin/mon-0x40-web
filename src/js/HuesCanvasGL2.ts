@@ -11,9 +11,6 @@ import fragmentSolid from "../glsl/HuesCanvasGL2/fragment-solid.glsl";
 export default class HuesCanvasGL2 implements HuesCanvas {
     #root: HTMLElement;
 
-    #baseWidth: number;
-    #baseHeight: number;
-
     #canvas: HTMLCanvasElement;
     #gl: WebGL2RenderingContext;
     #extAnisotropic: EXT_texture_filter_anisotropic;
@@ -29,8 +26,6 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         this.#root = root;
 
         const canvas = this.#canvas = document.createElement("canvas");
-        canvas.width = this.#baseWidth = 1280;
-        canvas.height = this.#baseHeight = 720;
         canvas.className = "hues-canvas";
         root.appendChild(canvas);
 
@@ -163,10 +158,8 @@ export default class HuesCanvasGL2 implements HuesCanvas {
     }
 
     resize(): void {
-        let height = this.#root.clientHeight;
-        let ratio = this.#root.clientWidth / height;
-        this.#canvas.height = Math.min(height * window.devicePixelRatio, this.#baseHeight);
-        this.#canvas.width = Math.ceil(this.#canvas.height * ratio);
+        this.#canvas.width = Math.ceil(this.#root.clientWidth * window.devicePixelRatio);
+        this.#canvas.height = Math.min(this.#root.clientHeight * window.devicePixelRatio);
     }
 
     setBlurQuality(quality: SettingsData["blurQuality"]): void {
