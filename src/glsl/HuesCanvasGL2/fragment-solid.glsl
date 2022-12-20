@@ -42,7 +42,7 @@ vec4 blend(vec4 tsample, vec3 color) {
 }
 
 void main(void) {
-    vec4 tsample = textureGrad(u_image, v_textureCoord, dFdx(v_textureCoord) * u_blur, dFdy(v_textureCoord)* u_blur);
+    vec4 tsample = textureGrad(u_image, v_textureCoord, dFdx(v_textureCoord) * u_blur * 2.0, dFdy(v_textureCoord) * u_blur * 2.0);
     vec3 blend = blend(tsample, u_hue).rgb;
     f_fragColor = vec4(mix(blend, u_overlay.rgb, u_overlay.a), 1.0);
 }
