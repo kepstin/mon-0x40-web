@@ -45,7 +45,7 @@ vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
 
 vec4 blend(vec4 tsample) {
     float talpha = tsample.a + u_backdrop.a * (1.0 - tsample.a);
-    tsample = vec4((tsample.rgb * tsample.a + u_backdrop.rgb * u_backdrop.a * (1.0 - tsample.a)) / talpha, talpha);
+    tsample = vec4((tsample.rgb + u_backdrop.rgb * u_backdrop.a * (1.0 - tsample.a)) / talpha, talpha);
     return hard_light(tsample, hue(), 0.7);
 }
 

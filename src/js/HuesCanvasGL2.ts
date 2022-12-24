@@ -6,8 +6,8 @@ import type { SettingsData } from "./HuesSettings";
 import backdropVertex from "../glsl/HuesCanvasGL2/backdrop-vertex.glsl";
 import backdropFragment from "../glsl/HuesCanvasGL2/backdrop-fragment.glsl";
 
-import vertexSolid from "../glsl/HuesCanvasGL2/vertex-solid.glsl";
-import fragmentSolid from "../glsl/HuesCanvasGL2/fragment-solid.glsl";
+import imageVertex from "../glsl/HuesCanvasGL2/image-vertex.glsl";
+import imageFragment from "../glsl/HuesCanvasGL2/image-fragment.glsl";
 
 function colourToGL(colour: number): Array<number> {
     return [
@@ -146,11 +146,11 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const gl = this.#gl;
 
         const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
-        gl.shaderSource(vertexShader, vertexSolid);
+        gl.shaderSource(vertexShader, imageVertex);
         gl.compileShader(vertexShader);
 
         const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
-        gl.shaderSource(fragmentShader, fragmentSolid);
+        gl.shaderSource(fragmentShader, imageFragment);
         gl.compileShader(fragmentShader);
 
         const shader = gl.createProgram()!;
@@ -212,7 +212,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         return texture;
     }
 
-    #drawBackdrop(params: RenderParams, glParams: RenderParamsGL2): void {
+    #drawBackdrop(glParams: RenderParamsGL2): void {
         const gl = this.#gl;
 
         gl.disable(gl.BLEND);
@@ -298,7 +298,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
             invert: params.invert ? 1.0 : 0.0,
         };
 
-        this.#drawBackdrop(params, glParams);
+        this.#drawBackdrop(glParams);
         this.#drawImage(params, glParams);
     }
 
