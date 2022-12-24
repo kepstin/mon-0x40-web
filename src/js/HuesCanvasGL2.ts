@@ -240,7 +240,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const gl = this.#gl;
 
         gl.enable(gl.BLEND);
-        gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         const shader = this.#imageShader!;
         gl.useProgram(shader);
