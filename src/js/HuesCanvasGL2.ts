@@ -215,8 +215,6 @@ export default class HuesCanvasGL2 implements HuesCanvas {
     #drawBackdrop(glParams: RenderParamsGL2): void {
         const gl = this.#gl;
 
-        gl.disable(gl.BLEND);
-
         const shader = this.#backdropShader!;
         gl.useProgram(shader);
 
@@ -238,9 +236,6 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         if (!params.bitmap) { return; }
 
         const gl = this.#gl;
-
-        gl.enable(gl.BLEND);
-        gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
         const shader = this.#imageShader!;
         gl.useProgram(shader);
