@@ -1,21 +1,16 @@
 #version 300 es
 precision mediump float;
 
-uniform vec3 u_lastHue;
-uniform vec4 u_hue;
 uniform sampler2D u_image;
 uniform vec2 u_blur;
 uniform vec4 u_backdrop;
 uniform vec4 u_overlay;
 uniform float u_invert;
 
+flat in vec3 v_hue;
 in vec2 v_textureCoord;
 
 out vec4 f_fragColor;
-
-vec3 hue() {
-    return mix(u_lastHue.rgb, u_hue.rgb, u_hue.a);
-}
 
 vec3 multiply(vec3 backdrop, vec3 source) {
     return backdrop * source;
@@ -46,8 +41,8 @@ vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
 vec4 blend(vec4 tsample) {
     float talpha = tsample.a + u_backdrop.a * (1.0 - tsample.a);
     tsample = vec4((tsample.rgb + u_backdrop.rgb * u_backdrop.a * (1.0 - tsample.a)) / talpha, talpha);
-    vec4 hl = hard_light(tsample, hue(), 0.7);
-    return vec4(hl.rgb + hue() * (1.0 - hl.a), 1.0);
+    vec4 hl = hard_light(tsample, v_hue, 0.7);
+    return vec4(hl.rgb + v_hue * (1.0 - hl.a), 1.0);
 }
 
 vec4 overlay(vec4 source) {
