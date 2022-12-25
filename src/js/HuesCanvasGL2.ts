@@ -195,7 +195,12 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const gl = this.#gl;
         const extAnisotropic = this.#extAnisotropic;
 
-        const maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+        let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+        console.log("Max Anisotropy: ", maxAnisotropy);
+        if (maxAnisotropy > 16) {
+            console.log("Limiting Anisotropy to 16×");
+            maxAnisotropy = 16;
+        }
 
         const texture: WebGLTexture = gl.createTexture()!;
         gl.bindTexture(gl.TEXTURE_2D, texture);
