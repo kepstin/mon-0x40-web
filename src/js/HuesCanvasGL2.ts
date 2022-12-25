@@ -81,7 +81,10 @@ export default class HuesCanvasGL2 implements HuesCanvas {
             premultipliedAlpha: true,
         }
         const gl = this.#gl = canvas.getContext("webgl2", contextOpts)!;
-        this.#extAnisotropic = gl.getExtension("EXT_texture_filter_anisotropic")!;
+        const extAnisotropic = this.#extAnisotropic = gl.getExtension("EXT_texture_filter_anisotropic")!;
+
+        let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
+        console.log("Max Anisotropy supported by GPU: ", maxAnisotropy);
 
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
 
@@ -196,9 +199,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const extAnisotropic = this.#extAnisotropic;
 
         let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
-        console.log("Max Anisotropy: ", maxAnisotropy);
         if (maxAnisotropy > 16) {
-            console.log("Limiting Anisotropy to 16×");
             maxAnisotropy = 16;
         }
 
