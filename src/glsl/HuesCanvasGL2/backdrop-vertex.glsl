@@ -10,8 +10,22 @@ in vec2 a_vertexPosition;
 
 flat out vec4 v_hue;
 
+vec3 srgb_to_linear(vec3 srgb) {
+    bvec3 cutoff = greaterThan(srgb, vec3(0.04045));
+    vec3 lower = srgb * vec3(1.0 / 12.92);
+    vec3 higher = pow((srgb + vec3(0.055)) * vec3(1.0 / 1.055), vec3(2.4));
+    return mix(lower, higher, cutoff);
+}
+
+vec3 linear_to_srgb(vec3 linear) {
+    bvec3 cutoff = greaterThan(linear, vec3(0.0031308));
+    vec3 lower = vec3(12.92) * linear;
+    vec3 higher = vec3(1.055) * pow(linear, vec3(1.0 / 2.4)) - vec3(0.055);
+    return mix(lower, higher, cutoff);
+}
+
 vec3 hue() {
-    return mix(u_lastHue.rgb, u_hue.rgb, u_hue.a);
+    return mix(srgb_to_linear(u_lastHue.rgb), srgb_to_linear(u_hue.rgb), u_hue.a);
 }
 
 vec3 multiply(vec3 backdrop, vec3 source) {
@@ -40,10 +54,14 @@ vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
     return vec4(c_result * backdrop.a, backdrop.a);
 }
 
-vec4 blend() {
-    vec3 colour = hue();
-    vec4 blend = hard_light(u_backdrop, colour, 0.7);
-    return vec4(mix(colour, blend.rgb, blend.a), 1.0);
+vec4 blend(vec4 source) {
+    // For consistency with flash, do blend effects with gamma encoding
+    source.rgb = linear_to_srgb(u_backdrop.rgb);
+    vec3 colour = linear_to_srgb(hue());
+    vec4 blend = hard_light(source, colour, 0.7);
+    blend.rgb = srgb_to_linear(blend.rgb);
+
+    return vec4(mix(hue(), blend.rgb, blend.a), 1.0);
 }
 
 vec4 overlay(vec4 source) {
@@ -56,7 +74,7 @@ vec4 invert(vec4 source) {
 
 void main(void) {
     gl_Position = vec4(a_vertexPosition, 0, 1);
-    vec4 blend = blend();
+    vec4 blend = blend(u_backdrop);
     vec4 overlaySample = overlay(blend);
     vec4 invertSample = invert(overlaySample);
     v_hue = invertSample;

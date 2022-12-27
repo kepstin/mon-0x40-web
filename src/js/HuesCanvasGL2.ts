@@ -199,9 +199,6 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const extAnisotropic = this.#extAnisotropic;
 
         let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
-        if (maxAnisotropy > 16) {
-            maxAnisotropy = 16;
-        }
 
         const texture: WebGLTexture = gl.createTexture()!;
         gl.bindTexture(gl.TEXTURE_2D, texture);
@@ -248,9 +245,10 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         const loc = this.#imageLocBlock!;
 
+        const { naturalWidth, naturalHeight } = params.bitmap;
         const { width, height } = this.#canvas;
         let [x, y, drawWidth, drawHeight] = calculateImageDrawCoords(
-            width, height, params.bitmap.naturalWidth, params.bitmap.naturalHeight, params.bitmapAlign, params.bitmapCenter);
+            width, height, naturalWidth, naturalHeight, params.bitmapAlign, params.bitmapCenter);
         const x1 = x / (width / 2.0) - 1.0;
         const x2 = (x + drawWidth) / (width / 2.0) - 1.0;
         const y1 = y / (height / 2.0) - 1.0;
@@ -274,7 +272,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         gl.uniform3fv(loc.uLastHue, glParams.lastHue);
         gl.uniform4fv(loc.uHue, glParams.hue);
-        gl.uniform2f(loc.uBlur, params.xBlur * 1280, params.yBlur * 1280);
+        gl.uniform2f(loc.uBlur, params.xBlur * 1280 / naturalWidth, params.yBlur * 1280 / naturalHeight);
         gl.uniform4fv(loc.uBackdrop, glParams.backdrop);
         gl.uniform4fv(loc.uOverlay, glParams.overlay);
         gl.uniform1f(loc.uInvert, glParams.invert);

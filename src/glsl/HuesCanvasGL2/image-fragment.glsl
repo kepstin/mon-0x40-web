@@ -2,15 +2,45 @@
 precision mediump float;
 
 uniform sampler2D u_image;
-uniform vec2 u_blur;
 uniform vec4 u_backdrop;
 uniform vec4 u_overlay;
 uniform float u_invert;
 
 flat in vec3 v_hue;
-in vec2 v_textureCoord;
+flat in vec2 v_blur;
+in vec2 v_textureCoord[5];
 
 out vec4 f_fragColor;
+
+vec3 srgb_to_linear(vec3 srgb) {
+    bvec3 cutoff = greaterThan(srgb, vec3(0.04045));
+    vec3 lower = srgb * vec3(1.0 / 12.92);
+    vec3 higher = pow((srgb + vec3(0.055)) * vec3(1.0 / 1.055), vec3(2.4));
+    return mix(lower, higher, cutoff);
+}
+
+vec3 linear_to_srgb(vec3 linear) {
+    bvec3 cutoff = greaterThan(linear, vec3(0.0031308));
+    vec3 lower = vec3(12.92) * linear;
+    vec3 higher = vec3(1.055) * pow(linear, vec3(1.0 / 2.4)) - vec3(0.055);
+    return mix(lower, higher, cutoff);
+}
+
+vec4 blur() {
+    vec4 accum = vec4(0.0);
+    vec2 blur = v_blur * vec2(textureSize(u_image, 0));
+
+    vec2 grad_x = dFdx(v_textureCoord[0]) * blur;
+    vec2 grad_y = dFdy(v_textureCoord[1]) * blur;
+
+    accum += textureGrad(u_image, v_textureCoord[0], grad_x, grad_y);
+    accum += textureGrad(u_image, v_textureCoord[1], grad_x, grad_y);
+    accum += textureGrad(u_image, v_textureCoord[2], grad_x, grad_y);
+    accum += textureGrad(u_image, v_textureCoord[3], grad_x, grad_y);
+    accum += textureGrad(u_image, v_textureCoord[4], grad_x, grad_y);
+
+    return accum / 5.0;
+}
 
 vec3 multiply(vec3 backdrop, vec3 source) {
     return backdrop * source;
@@ -38,11 +68,17 @@ vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
     return vec4(c_result * backdrop.a, backdrop.a);
 }
 
-vec4 blend(vec4 tsample) {
-    float talpha = tsample.a + u_backdrop.a * (1.0 - tsample.a);
-    tsample = vec4((tsample.rgb + u_backdrop.rgb * u_backdrop.a * (1.0 - tsample.a)) / talpha, talpha);
-    vec4 hl = hard_light(tsample, v_hue, 0.7);
-    return vec4(hl.rgb + v_hue * (1.0 - hl.a), 1.0);
+vec4 blend(vec4 source) {
+    float talpha = source.a + u_backdrop.a * (1.0 - source.a);
+    source = vec4((source.rgb + u_backdrop.rgb * u_backdrop.a * (1.0 - source.a)) / talpha, talpha);
+
+    // For consistency with flash, do blend effects with gamma encoding
+    source.rgb = linear_to_srgb(source.rgb);
+    vec3 colour = linear_to_srgb(v_hue);
+    vec4 blend = hard_light(source, colour, 0.7);
+    blend.rgb = srgb_to_linear(blend.rgb);
+
+    return vec4(mix(v_hue, blend.rgb, blend.a), 1.0);
 }
 
 vec4 overlay(vec4 source) {
@@ -54,8 +90,8 @@ vec4 invert(vec4 source) {
 }
 
 void main(void) {
-    vec4 tsample = textureGrad(u_image, v_textureCoord, dFdx(v_textureCoord) * u_blur * 2.0, dFdy(v_textureCoord) * u_blur * 2.0);
-    vec4 blend = blend(tsample);
+    vec4 blur = blur();
+    vec4 blend = blend(blur);
     vec4 overlaySample = overlay(blend);
     vec4 invertSample = invert(overlaySample);
     f_fragColor = invertSample;
