@@ -28,7 +28,7 @@ vec3 linear_to_srgb(vec3 linear) {
 
 vec4 blur() {
     vec4 accum = vec4(0.0);
-    vec2 blur = v_blur * vec2(textureSize(u_image, 0));
+    vec2 blur = max(v_blur * vec2(textureSize(u_image, 0)), vec2(1.0));
 
     vec2 grad_x = dFdx(v_textureCoord[0]) * blur;
     vec2 grad_y = dFdy(v_textureCoord[1]) * blur;
