@@ -83,8 +83,13 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const gl = this.#gl = canvas.getContext("webgl2", contextOpts)!;
         const extAnisotropic = this.#extAnisotropic = gl.getExtension("EXT_texture_filter_anisotropic")!;
 
+        const vendor = gl.getParameter(gl.VENDOR);
+        const renderer = gl.getParameter(gl.RENDERER);
+        const version = gl.getParameter(gl.VERSION);
+        console.log("OpenGL:", vendor, '--', renderer, '--', version);
+
         let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
-        console.log("Max Anisotropy supported by GPU: ", maxAnisotropy);
+        console.log("Max Anisotropy supported by GPU:", maxAnisotropy);
 
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
 

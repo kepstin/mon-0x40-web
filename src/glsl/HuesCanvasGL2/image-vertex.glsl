@@ -28,7 +28,7 @@ void blur() {
     v_textureCoord[2] = a_textureCoord + u_blur * vec2( 0.00,  0.00);
     v_textureCoord[3] = a_textureCoord + u_blur * vec2( 0.25, -0.25);
     v_textureCoord[4] = a_textureCoord + u_blur * vec2( 0.50,  0.50);
-    v_blur = u_blur * 0.8;
+    v_blur = u_blur * 0.5;
 }
 
 void main(void) {

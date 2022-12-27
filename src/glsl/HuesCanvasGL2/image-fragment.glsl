@@ -28,18 +28,20 @@ vec3 linear_to_srgb(vec3 linear) {
 
 vec4 blur() {
     vec4 accum = vec4(0.0);
-    vec2 blur = max(v_blur * vec2(textureSize(u_image, 0)), vec2(1.0));
+    vec2 blur = v_blur * vec2(textureSize(u_image, 0));
 
-    vec2 grad_x = dFdx(v_textureCoord[0]) * blur;
-    vec2 grad_y = dFdy(v_textureCoord[1]) * blur;
+    vec2 grad_x = dFdx(v_textureCoord[2]);
+    grad_x += grad_x * blur.x;
+    vec2 grad_y = dFdy(v_textureCoord[2]);
+    grad_y += grad_y * blur.y;
 
-    accum += textureGrad(u_image, v_textureCoord[0], grad_x, grad_y);
-    accum += textureGrad(u_image, v_textureCoord[1], grad_x, grad_y);
-    accum += textureGrad(u_image, v_textureCoord[2], grad_x, grad_y);
-    accum += textureGrad(u_image, v_textureCoord[3], grad_x, grad_y);
-    accum += textureGrad(u_image, v_textureCoord[4], grad_x, grad_y);
+    accum += textureGrad(u_image, v_textureCoord[0], grad_x, grad_y) * 0.0614;
+    accum += textureGrad(u_image, v_textureCoord[1], grad_x, grad_y) * 0.2448;
+    accum += textureGrad(u_image, v_textureCoord[2], grad_x, grad_y) * 0.3877;
+    accum += textureGrad(u_image, v_textureCoord[3], grad_x, grad_y) * 0.2448;
+    accum += textureGrad(u_image, v_textureCoord[4], grad_x, grad_y) * 0.0614;
 
-    return accum / 5.0;
+    return accum;
 }
 
 vec3 multiply(vec3 backdrop, vec3 source) {
