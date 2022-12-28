@@ -56,6 +56,8 @@ vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
     // Convert to straight alpha
     vec3 c_backdrop = clamp(backdrop.rgb / backdrop.a, 0.0, 1.0);
 
+    c_backdrop = mix(c_backdrop, vec3(1.0) - c_backdrop, u_invert);
+
     // For consistency with flash, do blend effects with gamma encoding.
     c_backdrop = linear_to_srgb(c_backdrop);
     c_source = linear_to_srgb(c_source);
@@ -80,7 +82,8 @@ vec4 blend(vec4 source) {
 }
 
 vec4 overlay(vec4 source) {
-    return mix(source, vec4(u_overlay.rgb, 1.0), u_overlay.a);
+    vec3 overlay = mix(u_overlay.rgb, vec3(1.0) - u_overlay.rgb, u_invert);
+    return mix(source, vec4(overlay, 1.0), u_overlay.a);
 }
 
 vec4 invert(vec4 source) {
@@ -91,8 +94,8 @@ void main(void) {
     vec4 blur = blur();
     vec4 blend = blend(blur);
     vec4 overlaySample = overlay(blend);
-    vec4 invertSample = invert(overlaySample);
+    //vec4 invertSample = invert(overlaySample);
 
     // WebGL framebuffer writes need to be sRGB
-    f_fragColor = vec4(linear_to_srgb(invertSample.rgb), 1.0);
+    f_fragColor = vec4(linear_to_srgb(overlaySample.rgb), 1.0);
 }
