@@ -28,40 +28,38 @@ vec3 hue() {
     return mix(srgb_to_linear(u_lastHue.rgb), srgb_to_linear(u_hue.rgb), u_hue.a);
 }
 
-vec3 multiply(vec3 backdrop, vec3 source) {
-    return backdrop * source;
-}
-
-vec3 screen(vec3 backdrop, vec3 source) {
-    return backdrop + source - (backdrop * source);
-}
-
-vec3 hard_light(vec3 backdrop, vec3 source) {
-    backdrop *= 2.0;
-    vec3 thresh = step(1.0, backdrop);
-    vec3 mix = mix(
-        screen(backdrop - vec3(1.0), source),
-        multiply(backdrop, source),
-        thresh
-    );
-    return clamp(mix, 0.0, 1.0);
+vec3 overlay(vec3 a, vec3 b) {
+    bvec3 thresh = greaterThanEqual(a, vec3(0.5));
+    vec3 under = 2.0 * a * b;
+    vec3 over = vec3(1.0) - 2.0 * (vec3(1.0) - a) * (vec3(1.0) - b);
+    vec3 result = mix(under, over, thresh);
+    return clamp(result, 0.0, 1.0);
 }
 
 vec4 hard_light(vec4 backdrop, vec3 c_source, float opacity) {
+    // Convert to straight alpha
     vec3 c_backdrop = clamp(backdrop.rgb / backdrop.a, 0.0, 1.0);
-    vec3 c_hard_light = hard_light(c_backdrop, c_source);
+
+    // For consistency with flash, do blend effects with gamma encoding.
+    c_backdrop = linear_to_srgb(c_backdrop);
+    c_source = linear_to_srgb(c_source);
+
+    vec3 c_hard_light = overlay(c_source, c_backdrop);
     vec3 c_result = mix(c_backdrop, c_hard_light, opacity);
+
+    // Convert back to linear light
+    c_result = srgb_to_linear(c_result);
+
+    // And convert back to premultiplied alpha
     return vec4(c_result * backdrop.a, backdrop.a);
 }
 
 vec4 blend(vec4 source) {
     // For consistency with flash, do blend effects with gamma encoding
-    source.rgb = linear_to_srgb(u_backdrop.rgb);
-    vec3 colour = linear_to_srgb(hue());
+    vec3 colour = hue();
     vec4 blend = hard_light(source, colour, 0.7);
-    blend.rgb = srgb_to_linear(blend.rgb);
 
-    return vec4(mix(hue(), blend.rgb, blend.a), 1.0);
+    return vec4(blend.rgb + colour * (1.0 - blend.a), 1.0);
 }
 
 vec4 overlay(vec4 source) {
