@@ -272,7 +272,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         this.#imgTextureMap.set(bitmap, texture);
     }
 
-    #setColourTexture(params: RenderParams): void {
+    #setColourTexture(params: RenderParams, last: boolean): void {
         const gl = this.#gl;
 
         const colourTexture = this.#colourTexture;
@@ -280,8 +280,12 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         const colourTextureBuf = this.#colourTextureBuf;
         colourBufferWrite(colourTextureBuf, ColourBufferIndex.LastColour, params.lastColour, 1.0);
-        const colourFade = (params.colourFade === undefined) ? 1.0 : params.colourFade;
-        colourBufferWrite(colourTextureBuf, ColourBufferIndex.Colour, params.colour, colourFade);
+        if (last) {
+            colourBufferWrite(colourTextureBuf, ColourBufferIndex.Colour, params.lastColour, 1.0);
+        } else {
+            const colourFade = (params.colourFade === undefined) ? 1.0 : params.colourFade;
+            colourBufferWrite(colourTextureBuf, ColourBufferIndex.Colour, params.colour, colourFade);
+        }
         if (params.bgColour == "transparent") {
             colourBufferWrite(colourTextureBuf, ColourBufferIndex.Background, 0, 0.0);
         } else {
@@ -291,6 +295,48 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, 4, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, colourTextureBuf);
+    }
+
+    #setShutterScissor(params: RenderParams, last: boolean): void {
+        const gl = this.#gl;
+        const { drawingBufferWidth, drawingBufferHeight } = gl;
+        const { shutter, shutterDir } = params;
+        let edge: number;
+
+        switch (shutterDir) {
+        case '→':
+            edge = Math.round(drawingBufferWidth * shutter!);
+            if (last) {
+                gl.scissor(edge, 0, drawingBufferWidth - edge, drawingBufferHeight);
+            } else {
+                gl.scissor(0, 0, edge, drawingBufferHeight);
+            }
+            break;
+        case '←':
+            edge = Math.round(drawingBufferWidth - drawingBufferWidth * shutter!);
+            if (last) {
+                gl.scissor(0, 0, edge, drawingBufferHeight);
+            } else {
+                gl.scissor(edge, 0, drawingBufferWidth - edge, drawingBufferHeight);
+            }
+            break;
+        case '↑':
+            edge = Math.round(drawingBufferHeight * shutter!);
+            if (last) {
+                gl.scissor(0, edge, drawingBufferWidth, drawingBufferHeight - edge);
+            } else {
+                gl.scissor(0, 0, drawingBufferWidth, edge);
+            }
+            break;
+        case '↓':
+            edge = Math.round(drawingBufferHeight - drawingBufferHeight * shutter!);
+            if (last) {
+                gl.scissor(0, edge, drawingBufferWidth, drawingBufferHeight - edge);
+            } else {
+                gl.scissor(0, 0, drawingBufferWidth, edge);
+            }
+        }
+
     }
 
     #assignRenderParams(loc: RenderParamsBlock, params: RenderParams): void {
@@ -315,8 +361,11 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    #drawImage(params: RenderParams): void {
-        if (!params.bitmap) { return; }
+    #drawImage(params: RenderParams, last: boolean): void {
+        const bitmap = last ? params.lastBitmap : params.bitmap;
+        const bitmapAlign = last ? params.lastBitmapAlign : params.bitmapAlign;
+        const bitmapCenter = last ? params.lastBitmapCenter : params.bitmapCenter;
+        if (!bitmap) { return; }
 
         const gl = this.#gl;
 
@@ -326,10 +375,10 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         const loc = this.#imageLocBlock!;
 
-        const { naturalWidth, naturalHeight } = params.bitmap;
+        const { naturalWidth, naturalHeight } = bitmap;
         const { width, height } = this.#canvas;
         let [x, y, drawWidth, drawHeight] = calculateImageDrawCoords(
-            width, height, naturalWidth, naturalHeight, params.bitmapAlign, params.bitmapCenter);
+            width, height, naturalWidth, naturalHeight, bitmapAlign, bitmapCenter);
         const x1 = x / (width / 2.0) - 1.0;
         const x2 = (x + drawWidth) / (width / 2.0) - 1.0;
         const y1 = y / (height / 2.0) - 1.0;
@@ -358,15 +407,37 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
+        if (params.shutter !== undefined) {
+            gl.enable(gl.SCISSOR_TEST);
+            this.#setShutterScissor(params, false);
+        } else {
+            gl.disable(gl.SCISSOR_TEST);
+        }
+
         gl.activeTexture(gl.TEXTURE0);
-        this.#setColourTexture(params);
+        this.#setColourTexture(params, false);
 
         this.#drawBackdrop(params);
 
         if (params.bitmap) {
             gl.activeTexture(gl.TEXTURE1);
             this.#setImgTexture(params.bitmap);
-            this.#drawImage(params);
+            this.#drawImage(params, false);
+        }
+
+        if (params.shutter !== undefined) {
+            this.#setShutterScissor(params, true);
+
+            gl.activeTexture(gl.TEXTURE0);
+            this.#setColourTexture(params, true);
+
+            this.#drawBackdrop(params);
+
+            if (params.bitmap) {
+                gl.activeTexture(gl.TEXTURE1);
+                this.#setImgTexture(params.lastBitmap!);
+                this.#drawImage(params, true);
+            }
         }
     }
 
