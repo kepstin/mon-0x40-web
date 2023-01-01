@@ -3,48 +3,57 @@
 import  { type RenderParams, type HuesCanvas, calculateImageDrawCoords } from "./HuesRender";
 import type { SettingsData } from "./HuesSettings";
 
-import backdropVertex from "../glsl/HuesCanvasGL2/backdrop-vertex.glsl";
-import backdropFragment from "../glsl/HuesCanvasGL2/backdrop-fragment.glsl";
+import gammaFunctionsSource from "../glsl/HuesCanvasGL2/GammaFunctions.glsl";
+import alphaFunctionsSource from "../glsl/HuesCanvasGL2/AlphaFunctions.glsl";
+import blendFunctionsSource from "../glsl/HuesCanvasGL2/BlendFunctions.glsl";
+import fragmentDefaultPrecisionSource from "../glsl/HuesCanvasGL2/FragmentDefaultPrecision.glsl";
+import renderParamsSource from "../glsl/HuesCanvasGL2/RenderParams.glsl";
+import huesBlendModesSource from "../glsl/HuesCanvasGL2/HuesBlendModes.glsl";
+import backdropVertexSource from "../glsl/HuesCanvasGL2/BackdropVertex.glsl";
+import backdropFragmentSource from "../glsl/HuesCanvasGL2/BackdropFragment.glsl";
+import imageVertexSource from "../glsl/HuesCanvasGL2/ImageVertex.glsl";
+import imageFragmentSource from "../glsl/HuesCanvasGL2/ImageFragment.glsl";
 
-import imageVertex from "../glsl/HuesCanvasGL2/image-vertex.glsl";
-import imageFragment from "../glsl/HuesCanvasGL2/image-fragment.glsl";
+enum ColourBufferIndex {
+    LastColour = 0,
+    Colour = 1,
+    Background = 2,
+    Overlay = 3,
+}
 
-function colourToGL(colour: number): Array<number> {
-    return [
-        (colour >> 16) / 255,
-        ((colour >> 8) & 0xff) / 255,
-        (colour & 0xff) / 255
-    ];
+function colourBufferWrite(colourTextureBuf: Uint8Array, index: ColourBufferIndex, colour: number, alpha: number) {
+    const i = index * 4;
+    colourTextureBuf[i] = (colour >> 16) & 0xff;
+    colourTextureBuf[i + 1] = (colour >> 8) & 0xff;
+    colourTextureBuf[i + 2] = colour & 0xff;
+    colourTextureBuf[i + 3] = Math.round(alpha * 255);
+}
+
+function shaderConcatSourcesGLES3(...sources: string[]): string {
+    let concatSources = ["#version 300 es\n"];
+    for (let i = 0; i < sources.length; i++) {
+        concatSources.push(`#line 1 ${i + 1}\n`, sources[i]);
+    }
+    const concatSource = concatSources.join('');
+    //console.log(concatSource);
+    return concatSource;
 }
 
 type BackdropLocBlock = {
     aVertexPosition: number,
-    uLastHue: WebGLUniformLocation,
-    uHue: WebGLUniformLocation,
-    uBackdrop: WebGLUniformLocation,
-    uOverlay: WebGLUniformLocation,
-    uInvert: WebGLUniformLocation,
 }
 
 type ImageLocBlock = {
     aVertexPosition: number,
     aTextureCoord: number,
     uImage: WebGLUniformLocation,
-    uLastHue: WebGLUniformLocation,
-    uHue: WebGLUniformLocation,
     uBlur: WebGLUniformLocation,
-    uBackdrop: WebGLUniformLocation,
-    uOverlay: WebGLUniformLocation,
-    uInvert: WebGLUniformLocation,
 };
 
-type RenderParamsGL2 = {
-    lastHue: Array<number>,
-    hue: Array<number>,
-    backdrop: Array<number>,
-    overlay: Array<number>,
-    invert: number,
-};
+type RenderParamsBlock = {
+    colour: WebGLUniformLocation | null,
+    invert: WebGLUniformLocation | null,
+}
 
 export default class HuesCanvasGL2 implements HuesCanvas {
     #root: HTMLElement;
@@ -57,12 +66,20 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
     #backdropShader: WebGLProgram | null;
     #backdropLocBlock: BackdropLocBlock | null;
+    #backdropRenderParams: RenderParamsBlock;
     #backdropPosBuf: WebGLBuffer;
 
     #imageShader: WebGLProgram | null;
     #imageLocBlock: ImageLocBlock | null;
+    #imageRenderParams: RenderParamsBlock;
     #imagePosBuf: WebGLBuffer;
     #imageTexturePosBuf: WebGLBuffer;
+
+    // A 1×4 texture containing the following colours, in order:
+    //   lastColour, colour, background, overlay
+    // Texture format is SRGB8_ALPHA8 with straight alpha.
+    #colourTextureBuf: Uint8Array;
+    #colourTexture: WebGLTexture;
 
     #imgTextureMap: WeakMap<HTMLImageElement, WebGLTexture>;
 
@@ -91,16 +108,16 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
         console.log("Max Anisotropy supported by GPU:", maxAnisotropy);
 
-        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
-
         gl.clearColor(1.0, 1.0, 1.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         this.#needShaderCompile = true;
         this.#backdropShader = null;
         this.#backdropLocBlock = null;
+        this.#backdropRenderParams = { colour: null, invert: null };
         this.#imageShader = null;
         this.#imageLocBlock = null;
+        this.#imageRenderParams = { colour: null, invert: null };
         window.setTimeout(() => { this.#compileShaders(); });
 
         const backdropPosBuf = this.#backdropPosBuf = gl.createBuffer()!;
@@ -116,17 +133,38 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([0, 0, 1, 0, 0, 1, 1, 1]), gl.DYNAMIC_DRAW);
 
         this.#imgTextureMap = new WeakMap();
+
+        const colourTextureBuf = this.#colourTextureBuf = new Uint8Array(16);
+        const colourTexture = this.#colourTexture = gl.createTexture()!;
+        gl.bindTexture(gl.TEXTURE_2D, colourTexture);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, 4, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, colourTextureBuf);
     }
 
     #compileBackdropShader(): void {
         const gl = this.#gl;
 
         const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
-        gl.shaderSource(vertexShader, backdropVertex);
+        const vertexShaderSource = shaderConcatSourcesGLES3(
+            alphaFunctionsSource,
+            gammaFunctionsSource,
+            renderParamsSource,
+            blendFunctionsSource,
+            huesBlendModesSource,
+            backdropVertexSource
+        );
+        gl.shaderSource(vertexShader, vertexShaderSource);
         gl.compileShader(vertexShader);
 
         const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
-        gl.shaderSource(fragmentShader, backdropFragment);
+        const fragmentShaderSource = shaderConcatSourcesGLES3(
+            fragmentDefaultPrecisionSource,
+            gammaFunctionsSource,
+            backdropFragmentSource
+        );
+        gl.shaderSource(fragmentShader, fragmentShaderSource);
         gl.compileShader(fragmentShader);
 
         const shader = gl.createProgram()!;
@@ -142,23 +180,38 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
         this.#backdropLocBlock = {
             aVertexPosition: gl.getAttribLocation(shader, "a_vertexPosition"),
-            uLastHue: gl.getUniformLocation(shader, "u_lastHue")!,
-            uHue: gl.getUniformLocation(shader, "u_hue")!,
-            uBackdrop: gl.getUniformLocation(shader, "u_backdrop")!,
-            uOverlay: gl.getUniformLocation(shader, "u_overlay")!,
-            uInvert: gl.getUniformLocation(shader, "u_invert")!,
-        }
+        };
+
+        this.#backdropRenderParams = {
+            colour: gl.getUniformLocation(shader, "u_colour"),
+            invert: gl.getUniformLocation(shader, "u_invert"),
+        };
     }
 
     #compileImageShader(): void {
         const gl = this.#gl;
 
         const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
-        gl.shaderSource(vertexShader, imageVertex);
+        const vertexShaderSource = shaderConcatSourcesGLES3(
+            alphaFunctionsSource,
+            gammaFunctionsSource,
+            renderParamsSource,
+            imageVertexSource
+        )
+        gl.shaderSource(vertexShader, vertexShaderSource);
         gl.compileShader(vertexShader);
 
         const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
-        gl.shaderSource(fragmentShader, imageFragment);
+        const fragmentShaderSource = shaderConcatSourcesGLES3(
+            fragmentDefaultPrecisionSource,
+            alphaFunctionsSource,
+            gammaFunctionsSource,
+            blendFunctionsSource,
+            renderParamsSource,
+            huesBlendModesSource,
+            imageFragmentSource
+        )
+        gl.shaderSource(fragmentShader, fragmentShaderSource);
         gl.compileShader(fragmentShader);
 
         const shader = gl.createProgram()!;
@@ -176,13 +229,12 @@ export default class HuesCanvasGL2 implements HuesCanvas {
             aVertexPosition: gl.getAttribLocation(shader, "a_vertexPosition"),
             aTextureCoord: gl.getAttribLocation(shader, "a_textureCoord"),
             uImage: gl.getUniformLocation(shader, "u_image")!,
-            uLastHue: gl.getUniformLocation(shader, "u_lastHue")!,
-            uHue: gl.getUniformLocation(shader, "u_hue")!,
             uBlur: gl.getUniformLocation(shader, "u_blur")!,
-            uBackdrop: gl.getUniformLocation(shader, "u_backdrop")!,
-            uOverlay: gl.getUniformLocation(shader, "u_overlay")!,
-            uInvert: gl.getUniformLocation(shader, "u_invert")!,
         };
+        this.#imageRenderParams = {
+            colour: gl.getUniformLocation(shader, "u_colour"),
+            invert: gl.getUniformLocation(shader, "u_invert"),
+        }
     }
 
     #compileShaders(): void {
@@ -194,15 +246,16 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         this.#needShaderCompile = false;
     }
 
-    #getImgTexture(bitmap: HTMLImageElement): WebGLTexture {
+    #setImgTexture(bitmap: HTMLImageElement): void {
+        const gl = this.#gl;
+
         let lookupTexture: WebGLTexture | undefined;
         if (lookupTexture = this.#imgTextureMap.get(bitmap)) {
-            return lookupTexture;
+            gl.bindTexture(gl.TEXTURE_2D, lookupTexture);
+            return;
         }
 
-        const gl = this.#gl;
         const extAnisotropic = this.#extAnisotropic;
-
         let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
 
         const texture: WebGLTexture = gl.createTexture()!;
@@ -213,40 +266,63 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAX_LEVEL, 9);
         gl.texParameterf(gl.TEXTURE_2D, extAnisotropic.TEXTURE_MAX_ANISOTROPY_EXT, maxAnisotropy);
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE_ALPHA, gl.LUMINANCE_ALPHA, gl.UNSIGNED_BYTE, bitmap);
         gl.generateMipmap(gl.TEXTURE_2D);
         this.#imgTextureMap.set(bitmap, texture);
-
-        return texture;
     }
 
-    #drawBackdrop(glParams: RenderParamsGL2): void {
+    #setColourTexture(params: RenderParams): void {
         const gl = this.#gl;
 
-        const shader = this.#backdropShader!;
-        gl.useProgram(shader);
+        const colourTexture = this.#colourTexture;
+        gl.bindTexture(gl.TEXTURE_2D, colourTexture);
+
+        const colourTextureBuf = this.#colourTextureBuf;
+        colourBufferWrite(colourTextureBuf, ColourBufferIndex.LastColour, params.lastColour, 1.0);
+        const colourFade = (params.colourFade === undefined) ? 1.0 : params.colourFade;
+        colourBufferWrite(colourTextureBuf, ColourBufferIndex.Colour, params.colour, colourFade);
+        if (params.bgColour == "transparent") {
+            colourBufferWrite(colourTextureBuf, ColourBufferIndex.Background, 0, 0.0);
+        } else {
+            colourBufferWrite(colourTextureBuf, ColourBufferIndex.Background, params.bgColour, 1.0);
+        }
+        colourBufferWrite(colourTextureBuf, ColourBufferIndex.Overlay, params.overlayColour, Math.min(params.overlayPercent, 1.0));
+
+        gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, 4, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, colourTextureBuf);
+    }
+
+    #assignRenderParams(loc: RenderParamsBlock, params: RenderParams): void {
+        const gl = this.#gl;
+
+        gl.uniform1i(loc.colour, 0);
+        gl.uniform1f(loc.invert, params.invert ? 1.0 : 0.0);
+    }
+
+    #drawBackdrop(params: RenderParams): void {
+        const gl = this.#gl;
+
+        gl.useProgram(this.#backdropShader);
+
+        this.#assignRenderParams(this.#backdropRenderParams, params);
 
         const loc = this.#backdropLocBlock!;
         gl.bindBuffer(gl.ARRAY_BUFFER, this.#backdropPosBuf);
         gl.enableVertexAttribArray(loc.aVertexPosition);
         gl.vertexAttribPointer(loc.aVertexPosition, 2, gl.FLOAT, false, 0, 0);
 
-        gl.uniform3fv(loc.uLastHue, glParams.lastHue);
-        gl.uniform4fv(loc.uHue, glParams.hue);
-        gl.uniform4fv(loc.uBackdrop, glParams.backdrop);
-        gl.uniform4fv(loc.uOverlay, glParams.overlay);
-        gl.uniform1f(loc.uInvert, glParams.invert);
-
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
 
-    #drawImage(params: RenderParams, glParams: RenderParamsGL2): void {
+    #drawImage(params: RenderParams): void {
         if (!params.bitmap) { return; }
 
         const gl = this.#gl;
 
-        const shader = this.#imageShader!;
-        gl.useProgram(shader);
+        gl.useProgram(this.#imageShader);
+
+        this.#assignRenderParams(this.#imageRenderParams, params);
 
         const loc = this.#imageLocBlock!;
 
@@ -268,19 +344,8 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.enableVertexAttribArray(loc.aTextureCoord);
         gl.vertexAttribPointer(loc.aTextureCoord, 2, gl.FLOAT, false, 0, 0);
 
-        if (params.bitmap) {
-            const texture = this.#getImgTexture(params.bitmap);
-            gl.activeTexture(gl.TEXTURE0);
-            gl.bindTexture(gl.TEXTURE_2D, texture);
-            gl.uniform1i(loc.uImage, 0);
-        }
-
-        gl.uniform3fv(loc.uLastHue, glParams.lastHue);
-        gl.uniform4fv(loc.uHue, glParams.hue);
+        gl.uniform1i(loc.uImage, 1);
         gl.uniform2f(loc.uBlur, params.xBlur * 1280 / naturalWidth, params.yBlur * 1280 / naturalHeight);
-        gl.uniform4fv(loc.uBackdrop, glParams.backdrop);
-        gl.uniform4fv(loc.uOverlay, glParams.overlay);
-        gl.uniform1f(loc.uInvert, glParams.invert);
 
         gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     }
@@ -293,17 +358,16 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
-        const colourFade = (params.colourFade === undefined) ? 1.0 : params.colourFade;
-        const glParams: RenderParamsGL2 = {
-            lastHue: colourToGL(params.lastColour),
-            hue: [...colourToGL(params.colour), colourFade],
-            backdrop: (params.bgColour == "transparent") ? [0.0, 0.0, 0.0, 0.0] : [...colourToGL(params.bgColour), 1.0],
-            overlay: [...colourToGL(params.overlayColour), Math.min(params.overlayPercent, 1.0)],
-            invert: params.invert ? 1.0 : 0.0,
-        };
+        gl.activeTexture(gl.TEXTURE0);
+        this.#setColourTexture(params);
 
-        this.#drawBackdrop(glParams);
-        this.#drawImage(params, glParams);
+        this.#drawBackdrop(params);
+
+        if (params.bitmap) {
+            gl.activeTexture(gl.TEXTURE1);
+            this.#setImgTexture(params.bitmap);
+            this.#drawImage(params);
+        }
     }
 
     resize(): void {
