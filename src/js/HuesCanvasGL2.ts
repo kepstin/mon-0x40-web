@@ -83,6 +83,8 @@ export default class HuesCanvasGL2 implements HuesCanvas {
 
     #imgTextureMap: WeakMap<HTMLImageElement, WebGLTexture>;
 
+    shutterWidth: number;
+
     constructor(root: HTMLElement) {
         this.#root = root;
 
@@ -108,7 +110,7 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         let maxAnisotropy = gl.getParameter(extAnisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT);
         console.log("Max Anisotropy supported by GPU:", maxAnisotropy);
 
-        gl.clearColor(1.0, 1.0, 1.0, 1.0);
+        gl.clearColor(0.0, 0.0, 0.0, 1.0);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
         this.#needShaderCompile = true;
@@ -141,6 +143,8 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
         gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 0);
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.SRGB8_ALPHA8, 4, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, colourTextureBuf);
+
+        this.shutterWidth = 1;
     }
 
     #compileBackdropShader(): void {
@@ -301,40 +305,43 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         const gl = this.#gl;
         const { drawingBufferWidth, drawingBufferHeight } = gl;
         const { shutter, shutterDir } = params;
+        const shutterWidth = Math.round(this.shutterWidth * window.devicePixelRatio);
+
         let edge: number;
 
         switch (shutterDir) {
-        case '→':
-            edge = Math.round(drawingBufferWidth * shutter!);
+        case '↓':
+            edge = drawingBufferHeight - Math.round((drawingBufferHeight - shutterWidth) * shutter!);
             if (last) {
-                gl.scissor(edge, 0, drawingBufferWidth - edge, drawingBufferHeight);
+                gl.scissor(0, 0, drawingBufferWidth, edge - shutterWidth);
             } else {
-                gl.scissor(0, 0, edge, drawingBufferHeight);
-            }
-            break;
-        case '←':
-            edge = Math.round(drawingBufferWidth - drawingBufferWidth * shutter!);
-            if (last) {
-                gl.scissor(0, 0, edge, drawingBufferHeight);
-            } else {
-                gl.scissor(edge, 0, drawingBufferWidth - edge, drawingBufferHeight);
+                gl.scissor(0, edge, drawingBufferWidth, drawingBufferHeight - edge);
             }
             break;
         case '↑':
-            edge = Math.round(drawingBufferHeight * shutter!);
+            edge = Math.round((drawingBufferHeight - shutterWidth) * shutter!);
             if (last) {
-                gl.scissor(0, edge, drawingBufferWidth, drawingBufferHeight - edge);
+                gl.scissor(0, edge + shutterWidth, drawingBufferWidth, drawingBufferHeight - edge - shutterWidth);
             } else {
                 gl.scissor(0, 0, drawingBufferWidth, edge);
             }
             break;
-        case '↓':
-            edge = Math.round(drawingBufferHeight - drawingBufferHeight * shutter!);
+        case '←':
+            edge = drawingBufferWidth - Math.round((drawingBufferWidth - shutterWidth) * shutter!);
             if (last) {
-                gl.scissor(0, edge, drawingBufferWidth, drawingBufferHeight - edge);
+                gl.scissor(0, 0, edge - shutterWidth, drawingBufferHeight);
             } else {
-                gl.scissor(0, 0, drawingBufferWidth, edge);
+                gl.scissor(edge, 0, drawingBufferWidth - edge, drawingBufferHeight);
             }
+            break;
+        case '→':
+            edge = Math.round((drawingBufferWidth - shutterWidth) * shutter!);
+            if (last) {
+                gl.scissor(edge + shutterWidth, 0, drawingBufferWidth - edge - shutterWidth, drawingBufferHeight);
+            } else {
+                gl.scissor(0, 0, edge, drawingBufferHeight);
+            }
+            break;
         }
 
     }
@@ -407,11 +414,11 @@ export default class HuesCanvasGL2 implements HuesCanvas {
         gl.bindFramebuffer(gl.FRAMEBUFFER, null);
         gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight);
 
+        gl.clear(gl.COLOR_BUFFER_BIT);
+
         if (params.shutter !== undefined) {
             gl.enable(gl.SCISSOR_TEST);
             this.#setShutterScissor(params, false);
-        } else {
-            gl.disable(gl.SCISSOR_TEST);
         }
 
         gl.activeTexture(gl.TEXTURE0);
@@ -438,7 +445,11 @@ export default class HuesCanvasGL2 implements HuesCanvas {
                 this.#setImgTexture(params.lastBitmap!);
                 this.#drawImage(params, true);
             }
+
+            gl.disable(gl.SCISSOR_TEST);
         }
+
+        gl.flush();
     }
 
     resize(): void {
